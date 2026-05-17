@@ -1,4 +1,8 @@
 import { hashPassword, signSession, verifySession, parseCookie } from './lib/auth.js';
+import { ulid } from 'ulid';
+import { parseVideoId } from './lib/parseUrl.js';
+import { fetchOembed } from './lib/oembed.js';
+import { scoreVideo } from './lib/score.js';
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 const LOGIN_LIMIT = 5;
@@ -30,6 +34,10 @@ export default {
 
     if (url.pathname === '/api/uploads' && request.method === 'GET') {
       return handleListUploads(env, cors);
+    }
+
+    if (url.pathname === '/api/uploads' && request.method === 'POST') {
+      return handleCreateUpload(request, env, cors);
     }
 
     return json({ error: 'not found' }, 404, cors);
@@ -84,6 +92,83 @@ async function handleListUploads(env, cors) {
     200,
     cors
   );
+}
+
+const VALID_USERS = ['kia', 'mohamad'];
+
+function isoMonth(d) {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function isoWeek(d) {
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+async function handleCreateUpload(request, env, cors) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: 'invalid json' }, 400, cors);
+  }
+
+  const user = body?.user;
+  const youtubeUrl = body?.youtube_url;
+  const note = (body?.note ?? '').toString().slice(0, 200);
+
+  if (!VALID_USERS.includes(user)) {
+    return json({ error: 'invalid user' }, 400, cors);
+  }
+  const videoId = parseVideoId(youtubeUrl);
+  if (!videoId) {
+    return json({ error: 'invalid youtube url' }, 400, cors);
+  }
+
+  const key = `uploads:${user}`;
+  const existingRaw = await env.UPLOADS_KV.get(key);
+  const existing = existingRaw ? JSON.parse(existingRaw) : [];
+  if (existing.some((u) => u.video_id === videoId)) {
+    return json({ error: 'duplicate' }, 409, cors);
+  }
+
+  const oembed = env._oembedMock
+    ? await env._oembedMock(youtubeUrl)
+    : await fetchOembed(youtubeUrl);
+
+  const quality = env._scoreMock
+    ? await env._scoreMock({ title: oembed.title, note })
+    : await scoreVideo(
+        { title: oembed.title, note },
+        { apiKey: env.ANTHROPIC_API_KEY }
+      );
+
+  const now = new Date();
+  const record = {
+    id: ulid(),
+    user,
+    youtube_url: youtubeUrl,
+    video_id: videoId,
+    title: oembed.title,
+    thumbnail: oembed.thumbnail,
+    author: oembed.author,
+    note,
+    uploaded_at: now.toISOString(),
+    published_week: isoWeek(now),
+    published_month: isoMonth(now),
+    upload_score: 1,
+    quality_score: quality,
+  };
+
+  existing.push(record);
+  await env.UPLOADS_KV.put(key, JSON.stringify(existing));
+  return json(record, 201, cors);
 }
 
 export async function requireAuth(request, env) {

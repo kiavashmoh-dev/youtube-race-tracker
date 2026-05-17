@@ -118,3 +118,107 @@ describe('GET /api/uploads', () => {
     });
   });
 });
+
+describe('POST /api/uploads', () => {
+  it('rejects bad URL', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    const req = await loggedInRequest(env, '/api/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: 'kia', youtube_url: 'not a url', note: '' }),
+    });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects unknown user', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    const req = await loggedInRequest(env, '/api/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user: 'somebody',
+        youtube_url: 'https://youtu.be/abc12345678',
+        note: '',
+      }),
+    });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(400);
+  });
+
+  it('creates an upload with score from injected dependencies', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    env._oembedMock = async () => ({ title: 'Hi', thumbnail: 'thumb', author: 'kia' });
+    env._scoreMock = async () => 3;
+    const req = await loggedInRequest(env, '/api/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user: 'kia',
+        youtube_url: 'https://youtu.be/abc12345678',
+        note: 'great take',
+      }),
+    });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(201);
+    const record = await res.json();
+    expect(record.user).toBe('kia');
+    expect(record.video_id).toBe('abc12345678');
+    expect(record.title).toBe('Hi');
+    expect(record.quality_score).toBe(3);
+    expect(record.upload_score).toBe(1);
+    expect(record.note).toBe('great take');
+    expect(record.published_month).toMatch(/^\d{4}-\d{2}$/);
+    expect(record.published_week).toMatch(/^\d{4}-W\d{2}$/);
+
+    const stored = JSON.parse(env._store.get('uploads:kia'));
+    expect(stored).toHaveLength(1);
+    expect(stored[0].id).toBe(record.id);
+  });
+
+  it('rejects duplicate video_id', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    env._oembedMock = async () => ({ title: 'X', thumbnail: '', author: '' });
+    env._scoreMock = async () => 2;
+    env._store.set(
+      'uploads:kia',
+      JSON.stringify([{ id: 'existing', video_id: 'abc12345678' }])
+    );
+    const req = await loggedInRequest(env, '/api/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user: 'kia',
+        youtube_url: 'https://youtu.be/abc12345678',
+        note: '',
+      }),
+    });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(409);
+  });
+
+  it('saves record with quality_score=null if score fails', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    env._oembedMock = async () => ({ title: 'X', thumbnail: '', author: '' });
+    env._scoreMock = async () => null;
+    const req = await loggedInRequest(env, '/api/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user: 'mohamad',
+        youtube_url: 'https://youtu.be/abc12345678',
+        note: '',
+      }),
+    });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(201);
+    const record = await res.json();
+    expect(record.quality_score).toBeNull();
+    expect(record.user).toBe('mohamad');
+  });
+});
