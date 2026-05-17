@@ -1,0 +1,10 @@
+name = "youtube-race-tracker"
+main = "worker.js"
+compatibility_date = "2026-05-01"
+
+[[kv_namespaces]]
+binding = "UPLOADS_KV"
+id = "REPLACE_WITH_KV_ID_AFTER_CREATION"
+
+[vars]
+ALLOWED_ORIGIN = "https://REPLACE_WITH_GH_PAGES_URL"
