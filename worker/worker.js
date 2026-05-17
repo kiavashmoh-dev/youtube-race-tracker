@@ -40,6 +40,16 @@ export default {
       return handleCreateUpload(request, env, cors);
     }
 
+    const deleteMatch = url.pathname.match(/^\/api\/uploads\/([^/]+)$/);
+    if (deleteMatch && request.method === 'DELETE') {
+      return handleDeleteUpload(deleteMatch[1], url.searchParams.get('user'), env, cors);
+    }
+
+    const rescoreMatch = url.pathname.match(/^\/api\/uploads\/([^/]+)\/rescore$/);
+    if (rescoreMatch && request.method === 'POST') {
+      return handleRescore(rescoreMatch[1], url.searchParams.get('user'), env, cors);
+    }
+
     return json({ error: 'not found' }, 404, cors);
   },
 };
@@ -169,6 +179,44 @@ async function handleCreateUpload(request, env, cors) {
   existing.push(record);
   await env.UPLOADS_KV.put(key, JSON.stringify(existing));
   return json(record, 201, cors);
+}
+
+async function handleDeleteUpload(id, user, env, cors) {
+  if (!VALID_USERS.includes(user)) {
+    return json({ error: 'invalid user' }, 400, cors);
+  }
+  const key = `uploads:${user}`;
+  const existingRaw = await env.UPLOADS_KV.get(key);
+  const existing = existingRaw ? JSON.parse(existingRaw) : [];
+  const next = existing.filter((u) => u.id !== id);
+  if (next.length === existing.length) {
+    return json({ error: 'not found' }, 404, cors);
+  }
+  await env.UPLOADS_KV.put(key, JSON.stringify(next));
+  return json({ ok: true }, 200, cors);
+}
+
+async function handleRescore(id, user, env, cors) {
+  if (!VALID_USERS.includes(user)) {
+    return json({ error: 'invalid user' }, 400, cors);
+  }
+  const key = `uploads:${user}`;
+  const existingRaw = await env.UPLOADS_KV.get(key);
+  const existing = existingRaw ? JSON.parse(existingRaw) : [];
+  const idx = existing.findIndex((u) => u.id === id);
+  if (idx === -1) {
+    return json({ error: 'not found' }, 404, cors);
+  }
+  const target = existing[idx];
+  const quality = env._scoreMock
+    ? await env._scoreMock({ title: target.title, note: target.note })
+    : await scoreVideo(
+        { title: target.title, note: target.note },
+        { apiKey: env.ANTHROPIC_API_KEY }
+      );
+  existing[idx] = { ...target, quality_score: quality };
+  await env.UPLOADS_KV.put(key, JSON.stringify(existing));
+  return json(existing[idx], 200, cors);
 }
 
 export async function requireAuth(request, env) {

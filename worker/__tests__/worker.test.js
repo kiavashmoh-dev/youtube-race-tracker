@@ -222,3 +222,51 @@ describe('POST /api/uploads', () => {
     expect(record.user).toBe('mohamad');
   });
 });
+
+describe('DELETE /api/uploads/:id', () => {
+  it('removes an upload', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    env._store.set(
+      'uploads:kia',
+      JSON.stringify([
+        { id: 'a', video_id: '1' },
+        { id: 'b', video_id: '2' },
+      ])
+    );
+    const req = await loggedInRequest(env, '/api/uploads/a?user=kia', { method: 'DELETE' });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(200);
+    const remaining = JSON.parse(env._store.get('uploads:kia'));
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].id).toBe('b');
+  });
+
+  it('404 when id not found', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    env._store.set('uploads:kia', JSON.stringify([]));
+    const req = await loggedInRequest(env, '/api/uploads/nope?user=kia', { method: 'DELETE' });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('POST /api/uploads/:id/rescore', () => {
+  it('updates quality_score on existing upload', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    env._scoreMock = async () => 2;
+    env._store.set(
+      'uploads:kia',
+      JSON.stringify([
+        { id: 'a', video_id: '1', title: 'T', note: 'N', quality_score: null },
+      ])
+    );
+    const req = await loggedInRequest(env, '/api/uploads/a/rescore?user=kia', { method: 'POST' });
+    const res = await worker.fetch(req, env);
+    expect(res.status).toBe(200);
+    const stored = JSON.parse(env._store.get('uploads:kia'));
+    expect(stored[0].quality_score).toBe(2);
+  });
+});
