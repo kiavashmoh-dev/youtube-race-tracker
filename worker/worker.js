@@ -21,6 +21,17 @@ export default {
       return handleLogin(request, env, cors);
     }
 
+    // All routes below require auth.
+    if (url.pathname.startsWith('/api/')) {
+      if (!(await requireAuth(request, env))) {
+        return json({ error: 'unauthorized' }, 401, cors);
+      }
+    }
+
+    if (url.pathname === '/api/uploads' && request.method === 'GET') {
+      return handleListUploads(env, cors);
+    }
+
     return json({ error: 'not found' }, 404, cors);
   },
 };
@@ -58,6 +69,21 @@ async function handleLogin(request, env, cors) {
       ...cors,
     },
   });
+}
+
+async function handleListUploads(env, cors) {
+  const [kiaRaw, mohamadRaw] = await Promise.all([
+    env.UPLOADS_KV.get('uploads:kia'),
+    env.UPLOADS_KV.get('uploads:mohamad'),
+  ]);
+  return json(
+    {
+      kia: kiaRaw ? JSON.parse(kiaRaw) : [],
+      mohamad: mohamadRaw ? JSON.parse(mohamadRaw) : [],
+    },
+    200,
+    cors
+  );
 }
 
 export async function requireAuth(request, env) {

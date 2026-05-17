@@ -81,3 +81,40 @@ describe('POST /api/login', () => {
     expect(blocked.status).toBe(429);
   });
 });
+
+async function loggedInRequest(env, path, init = {}) {
+  const { signSession } = await import('../lib/auth.js');
+  const token = await signSession(env.SESSION_SIGNING_KEY, { ttlMs: 60_000 });
+  return makeRequest(path, {
+    ...init,
+    headers: { ...(init.headers || {}), Cookie: `session=${token}` },
+  });
+}
+
+describe('GET /api/uploads', () => {
+  it('requires auth', async () => {
+    const env = makeEnv();
+    const res = await worker.fetch(makeRequest('/api/uploads'), env);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns empty arrays when no uploads yet', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    const res = await worker.fetch(await loggedInRequest(env, '/api/uploads'), env);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ kia: [], mohamad: [] });
+  });
+
+  it('returns stored uploads', async () => {
+    const env = makeEnv();
+    env.SHARED_PASSWORD_HASH = await hashPassword('x');
+    env._store.set('uploads:kia', JSON.stringify([{ id: '1', title: 'A' }]));
+    env._store.set('uploads:mohamad', JSON.stringify([{ id: '2', title: 'B' }]));
+    const res = await worker.fetch(await loggedInRequest(env, '/api/uploads'), env);
+    expect(await res.json()).toEqual({
+      kia: [{ id: '1', title: 'A' }],
+      mohamad: [{ id: '2', title: 'B' }],
+    });
+  });
+});
