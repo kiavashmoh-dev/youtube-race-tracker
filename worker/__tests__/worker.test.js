@@ -39,7 +39,7 @@ describe('POST /api/login', () => {
     const res = await worker.fetch(req, env);
     expect(res.status).toBe(200);
     const setCookie = res.headers.get('Set-Cookie');
-    expect(setCookie).toMatch(/^session=.+; HttpOnly; Secure; SameSite=Lax; Path=\/; Max-Age=\d+/);
+    expect(setCookie).toMatch(/^session=.+; HttpOnly; Secure; SameSite=None; Path=\/; Max-Age=\d+/);
   });
 
   it('returns 401 on wrong password', async () => {

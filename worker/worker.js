@@ -82,7 +82,7 @@ async function handleLogin(request, env, cors) {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
-      'Set-Cookie': `session=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`,
+      'Set-Cookie': `session=${token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`,
       ...cors,
     },
   });
