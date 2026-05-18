@@ -7,4 +7,4 @@ binding = "UPLOADS_KV"
 id = "07a47decd79b46949eac1008e2802d15"
 
 [vars]
-ALLOWED_ORIGIN = "*"
+ALLOWED_ORIGIN = "https://kiavashmoh-dev.github.io"
