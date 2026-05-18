@@ -1,5 +1,4 @@
 import { hashPassword, signSession, verifySession, parseCookie } from './lib/auth.js';
-import { ulid } from 'ulid';
 import { parseVideoId } from './lib/parseUrl.js';
 import { fetchOembed } from './lib/oembed.js';
 import { scoreVideo } from './lib/score.js';
@@ -161,7 +160,7 @@ async function handleCreateUpload(request, env, cors) {
 
   const now = new Date();
   const record = {
-    id: ulid(),
+    id: crypto.randomUUID(),
     user,
     youtube_url: youtubeUrl,
     video_id: videoId,
