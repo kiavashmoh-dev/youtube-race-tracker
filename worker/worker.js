@@ -1,4 +1,4 @@
-import { hashPassword, signSession, verifySession, parseCookie } from './lib/auth.js';
+import { hashPassword, signSession, verifySession } from './lib/auth.js';
 import { parseVideoId } from './lib/parseUrl.js';
 import { fetchOembed } from './lib/oembed.js';
 import { scoreVideo } from './lib/score.js';
@@ -78,14 +78,7 @@ async function handleLogin(request, env, cors) {
   }
 
   const token = await signSession(env.SESSION_SIGNING_KEY, { ttlMs: SESSION_TTL_MS });
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json',
-      'Set-Cookie': `session=${token}; HttpOnly; Secure; SameSite=None; Path=/; Max-Age=${SESSION_TTL_MS / 1000}`,
-      ...cors,
-    },
-  });
+  return json({ ok: true, token }, 200, cors);
 }
 
 async function handleListUploads(env, cors) {
@@ -219,8 +212,9 @@ async function handleRescore(id, user, env, cors) {
 }
 
 export async function requireAuth(request, env) {
-  const cookie = parseCookie(request.headers.get('Cookie'), 'session');
-  const result = await verifySession(env.SESSION_SIGNING_KEY, cookie);
+  const header = request.headers.get('Authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  const result = await verifySession(env.SESSION_SIGNING_KEY, token);
   return result.valid;
 }
 
@@ -228,8 +222,7 @@ export function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin || '*',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Credentials': 'true',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   };
 }
 

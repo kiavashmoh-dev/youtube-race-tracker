@@ -38,8 +38,10 @@ describe('POST /api/login', () => {
     });
     const res = await worker.fetch(req, env);
     expect(res.status).toBe(200);
-    const setCookie = res.headers.get('Set-Cookie');
-    expect(setCookie).toMatch(/^session=.+; HttpOnly; Secure; SameSite=None; Path=\/; Max-Age=\d+/);
+    const body = await res.json();
+    expect(body.ok).toBe(true);
+    expect(typeof body.token).toBe('string');
+    expect(body.token.length).toBeGreaterThan(20);
   });
 
   it('returns 401 on wrong password', async () => {
@@ -87,7 +89,7 @@ async function loggedInRequest(env, path, init = {}) {
   const token = await signSession(env.SESSION_SIGNING_KEY, { ttlMs: 60_000 });
   return makeRequest(path, {
     ...init,
-    headers: { ...(init.headers || {}), Cookie: `session=${token}` },
+    headers: { ...(init.headers || {}), Authorization: `Bearer ${token}` },
   });
 }
 

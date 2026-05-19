@@ -1,18 +1,37 @@
 import type { Upload, UploadsResponse, User } from './types';
 
 const WORKER_URL = import.meta.env.VITE_WORKER_URL as string;
+const TOKEN_KEY = 'yt-tracker:token';
 
 if (!WORKER_URL) {
   throw new Error('VITE_WORKER_URL is not set. Add it to .env.local or the build environment.');
 }
 
+function getToken(): string | null {
+  try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+}
+
+function setToken(token: string | null) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // localStorage unavailable (private mode etc) — fall through; user re-logs each visit
+  }
+}
+
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${WORKER_URL}${path}`, {
-    ...init,
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
-  });
+  const token = getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> | undefined),
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${WORKER_URL}${path}`, { ...init, headers });
+
   if (res.status === 401) {
+    setToken(null);
     throw new ApiError('unauthorized', 401);
   }
   if (!res.ok) {
@@ -32,10 +51,14 @@ export class ApiError extends Error {
 }
 
 export const api = {
-  login: (password: string) => call<{ ok: true }>('/api/login', {
-    method: 'POST',
-    body: JSON.stringify({ password }),
-  }),
+  login: async (password: string) => {
+    const result = await call<{ ok: true; token: string }>('/api/login', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+    setToken(result.token);
+    return result;
+  },
   list: () => call<UploadsResponse>('/api/uploads'),
   create: (user: User, youtube_url: string, note: string) =>
     call<Upload>('/api/uploads', {
@@ -46,4 +69,5 @@ export const api = {
     call<{ ok: true }>(`/api/uploads/${id}?user=${user}`, { method: 'DELETE' }),
   rescore: (user: User, id: string) =>
     call<Upload>(`/api/uploads/${id}/rescore?user=${user}`, { method: 'POST' }),
+  logout: () => setToken(null),
 };
